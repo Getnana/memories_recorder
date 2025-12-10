@@ -1,86 +1,26 @@
+// lib/services/memory_service.dart
 
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
 import '../models/memory.dart';
 
-/// Service sederhana untuk mengelola data Memory.
-/// Saat ini masih in-memory (belum pakai database / backend),
-/// tapi strukturnya disiapkan supaya nanti mudah diganti ke API / lokal storage.
 class MemoryService {
-  MemoryService._internal() {
-    _seedDummyData();
-  }
-
+  MemoryService._internal();
   static final MemoryService _instance = MemoryService._internal();
-
-  /// Cara akses:
-  /// final service = MemoryService();
   factory MemoryService() => _instance;
 
-  final List<Memory> _memories = [];
+  final FirebaseDatabase _db = FirebaseDatabase.instance;
 
-  /// Dummy data awal untuk kebutuhan UI / prototyping.
-  void _seedDummyData() {
-    if (_memories.isNotEmpty) return;
-
-    for (var i = 1; i <= 6; i++) {
-      _memories.add(
-        Memory.sample(index: i, isDraft: false),
-      );
-    }
-
-    for (var i = 1; i <= 3; i++) {
-      _memories.add(
-        Memory.sample(index: 100 + i, isDraft: true),
-      );
-    }
+  /// 🔐 Ambil UID user aktif
+  String get _uid {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) throw Exception("User not logged in");
+    return user.uid;
   }
 
-  /// Mengambil semua memori.
-  /// [includeDrafts] = false jika hanya ingin yang sudah publish.
-  List<Memory> getAll({bool includeDrafts = true}) {
-    if (includeDrafts) {
-      return List.unmodifiable(
-        _memories
-          ..sort((a, b) => b.date.compareTo(a.date)),
-      );
-    }
-    return List.unmodifiable(
-      _memories
-          .where((m) => !m.isDraft)
-          .toList()
-        ..sort((a, b) => b.date.compareTo(a.date)),
-    );
-  }
-
-  /// Mengambil semua memori yang sudah publish.
-  List<Memory> getPublished() {
-    return getAll(includeDrafts: false);
-  }
-
-  /// Mengambil semua draft.
-  List<Memory> getDrafts() {
-    return List.unmodifiable(
-      _memories
-          .where((m) => m.isDraft)
-          .toList()
-        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt)),
-    );
-  }
-
-  /// Mencari memori berdasarkan id.
-  Memory? getById(String id) {
-    try {
-      return _memories.firstWhere((m) => m.id == id);
-    } catch (_) {
-      return null;
-    }
-  }
-
-  /// Membuat id sederhana berbasis waktu.
-  String _generateId() {
-    return 'mem_${DateTime.now().microsecondsSinceEpoch}';
-  }
-
-  /// Membuat memori baru.
+  /// ================================================================
+  /// 🔹 CREATE MEMORY
+  /// ================================================================
   Future<Memory> createMemory({
     required String title,
     required String content,
@@ -89,9 +29,10 @@ class MemoryService {
     String? aiSuggestion,
   }) async {
     final now = DateTime.now();
+    final id = "mem_${now.microsecondsSinceEpoch}";
 
     final memory = Memory(
-      id: _generateId(),
+      id: id,
       title: title,
       content: content,
       date: date,
@@ -101,46 +42,159 @@ class MemoryService {
       aiSuggestion: aiSuggestion,
     );
 
-    _memories.add(memory);
+    final path = isDraft
+        ? "drafts/$_uid/$id"
+        : "memories/$_uid/$id";
+
+    await _db.ref(path).set(memory.toMap());
+
     return memory;
   }
 
-  /// Memperbarui memori yang sudah ada.
-  Future<Memory?> updateMemory(
+  /// ================================================================
+  /// 🔹 STREAM MEMORY (published)
+  /// ================================================================
+  Stream<List<Memory>> memoriesStream() {
+    return _db.ref("memories/$_uid").onValue.map((event) {
+      if (event.snapshot.value == null) return [];
+
+      final raw = Map<String, dynamic>.from(event.snapshot.value as Map);
+
+      return raw.entries.map((e) {
+        final map = Map<String, dynamic>.from(e.value);
+        map["id"] = e.key;
+        return Memory.fromMap(map);
+      }).toList()
+        ..sort((a, b) => b.date.compareTo(a.date));
+    });
+  }
+
+  /// ================================================================
+  /// 🔹 STREAM DRAFTS
+  /// ================================================================
+  Stream<List<Memory>> draftsStream() {
+    return _db.ref("drafts/$_uid").onValue.map((event) {
+      if (event.snapshot.value == null) return [];
+
+      final raw = Map<String, dynamic>.from(event.snapshot.value as Map);
+
+      return raw.entries.map((e) {
+        final map = Map<String, dynamic>.from(e.value);
+        map["id"] = e.key;
+        return Memory.fromMap(map);
+      }).toList()
+        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    });
+  }
+
+  /// ================================================================
+  /// 🔹 ALIAS — supaya file lama tetap bekerja
+  /// ================================================================
+  Stream<List<Memory>> getAllStream() => memoriesStream();
+  Stream<List<Memory>> getDraftStream() => draftsStream();
+
+  /// ================================================================
+  /// 🔹 GET ONCE (NO STREAM)
+  /// ================================================================
+  Future<List<Memory>> getMemoriesOnce() async {
+    final snap = await _db.ref("memories/$_uid").get();
+    if (!snap.exists || snap.value == null) return [];
+
+    final raw = Map<String, dynamic>.from(snap.value as Map);
+
+    return raw.entries.map((e) {
+      final map = Map<String, dynamic>.from(e.value);
+      map["id"] = e.key;
+      return Memory.fromMap(map);
+    }).toList()
+      ..sort((a, b) => b.date.compareTo(a.date));
+  }
+
+  Future<List<Memory>> getDraftsOnce() async {
+    final snap = await _db.ref("drafts/$_uid").get();
+    if (!snap.exists || snap.value == null) return [];
+
+    final raw = Map<String, dynamic>.from(snap.value as Map);
+
+    return raw.entries.map((e) {
+      final map = Map<String, dynamic>.from(e.value);
+      map["id"] = e.key;
+      return Memory.fromMap(map);
+    }).toList()
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+  }
+
+  /// dipakai LoginScreen → cek apakah user punya memory
+  Future<bool> hasPublished() async {
+    final list = await getMemoriesOnce();
+    return list.isNotEmpty;
+  }
+
+  /// ================================================================
+  /// 🔹 GET BY ID (untuk detail page)
+  /// ================================================================
+  Future<Memory?> getById(String id, {required bool isDraft}) async {
+    final path = isDraft
+        ? "drafts/$_uid/$id"
+        : "memories/$_uid/$id";
+
+    final snap = await _db.ref(path).get();
+    if (!snap.exists || snap.value == null) return null;
+
+    final map = Map<String, dynamic>.from(snap.value as Map);
+    map["id"] = id;
+
+    return Memory.fromMap(map);
+  }
+
+  /// ================================================================
+  /// 🔹 UPDATE MEMORY
+  /// ================================================================
+  Future<void> updateMemory(
     String id, {
-    String? title,
-    String? content,
-    DateTime? date,
-    bool? isDraft,
-    String? aiSuggestion,
+    required bool wasDraft,
+    required String title,
+    required String content,
+    required DateTime date,
+    required bool isDraft,
   }) async {
-    final index = _memories.indexWhere((m) => m.id == id);
-    if (index == -1) return null;
+    final now = DateTime.now();
 
-    final existing = _memories[index];
-    final updated = existing.copyWith(
-      title: title,
-      content: content,
-      date: date,
-      isDraft: isDraft,
-      aiSuggestion: aiSuggestion,
-      updatedAt: DateTime.now(),
-    );
+    /// ambil lokasi lama (draft atau memory)
+    final oldPath = wasDraft
+        ? "drafts/$_uid/$id"
+        : "memories/$_uid/$id";
 
-    _memories[index] = updated;
-    return updated;
+    /// hapus dari lokasi lama jika pindah kategori
+    if (wasDraft != isDraft) {
+      await _db.ref(oldPath).remove();
+    }
+
+    final newPath = isDraft
+        ? "drafts/$_uid/$id"
+        : "memories/$_uid/$id";
+
+    final updated = {
+      "id": id,
+      "title": title,
+      "content": content,
+      "date": date.toIso8601String(),
+      "createdAt": now.toIso8601String(), // tidak masalah overwrite
+      "updatedAt": now.toIso8601String(),
+      "isDraft": isDraft,
+    };
+
+    await _db.ref(newPath).set(updated);
   }
 
-  /// Menghapus memori berdasarkan id.
-  Future<bool> deleteMemory(String id) async {
-    final index = _memories.indexWhere((m) => m.id == id);
-    if (index == -1) return false;
-    _memories.removeAt(index);
-    return true;
-  }
+  /// ================================================================
+  /// 🔹 DELETE MEMORY
+  /// ================================================================
+  Future<void> deleteMemory(String id, {required bool isDraft}) async {
+    final path = isDraft
+        ? "drafts/$_uid/$id"
+        : "memories/$_uid/$id";
 
-  /// Menghapus semua memori (hati-hati, biasanya hanya dipakai untuk debugging).
-  Future<void> clearAll() async {
-    _memories.clear();
+    await _db.ref(path).remove();
   }
 }

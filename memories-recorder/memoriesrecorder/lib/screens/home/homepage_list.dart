@@ -6,9 +6,7 @@ import '../../services/memory_service.dart';
 import '../../utils/responsive.dart';
 import '../../widgets/bottom_nav.dart';
 import '../../widgets/memory_card.dart';
-// ignore: unused_import
-import 'package:animations/animations.dart';  // Untuk animasi transisi
-import '../../screens/ai/ai_recommendation_page.dart';  // Pastikan halaman AI sudah ada
+import '../../screens/ai/ai_recommendation_page.dart';
 
 class HomePageList extends StatefulWidget {
   const HomePageList({super.key});
@@ -19,7 +17,6 @@ class HomePageList extends StatefulWidget {
 
 class _HomePageListState extends State<HomePageList> {
   final MemoryService _memoryService = MemoryService();
-  List<Memory> _memories = [];
 
   bool _showIntro = true;
 
@@ -36,26 +33,15 @@ class _HomePageListState extends State<HomePageList> {
   @override
   void initState() {
     super.initState();
-    _loadMemories();
-
-    // Pick random quote
     _selectedQuote = _quotes[Random().nextInt(_quotes.length)];
-  }
-
-  void _loadMemories() {
-    setState(() {
-      _memories = _memoryService.getPublished();
-    });
   }
 
   void _goToCreateMemory() async {
     await Navigator.pushNamed(context, '/memoryCreate');
-    _loadMemories();
   }
 
   void _openMemory(Memory memory) async {
     await Navigator.pushNamed(context, '/memoryDetail', arguments: memory);
-    _loadMemories();
   }
 
   void _hideIntro() {
@@ -64,7 +50,6 @@ class _HomePageListState extends State<HomePageList> {
     });
   }
 
-  // Animasi ke halaman AI suggestion
   void _goToAISuggestions() {
     Navigator.push(
       context,
@@ -73,54 +58,50 @@ class _HomePageListState extends State<HomePageList> {
   }
 
   @override
-Widget build(BuildContext context) {
-  final theme = Theme.of(context); // Pastikan kita mendapatkan theme dari context
-  final textTheme = theme.textTheme;
-  final horizontalPadding = Responsive.horizontalPadding(context);
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+    final horizontalPadding = Responsive.horizontalPadding(context);
 
-  return Scaffold(
-    appBar: AppBar(
-      title: const Text('Memories'),
-      centerTitle: true,
-      actions: [
-        IconButton(
-          onPressed: () {
-            Navigator.pushNamed(context, '/notification');  // Halaman Notifikasi
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Memories'),
+        centerTitle: true,
+        actions: [
+          IconButton(
+            onPressed: () {
+              Navigator.pushNamed(context, '/notification');
             },
             icon: const Icon(Icons.notifications),
             tooltip: 'Notifications',
-        ),
-      ],
-    ),
-    bottomNavigationBar: const BottomNav(currentIndex: 0),
-    floatingActionButton: !_showIntro
-        ? FloatingActionButton.extended(
-            onPressed: _goToCreateMemory,
-            icon: const Icon(Icons.add),
-            label: const Text('New Memory'),
-          )
-        : null,
-    body: SafeArea(
-      child: Stack(
-        children: [
-          // AnimatedSwitcher untuk intro dan list view
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 400),
-            child: _showIntro
-                ? _buildIntroView(textTheme, theme)
-                : _buildListView(textTheme, theme, horizontalPadding),
           ),
-          // Maskot robot yang diletakkan di kanan bawah layar
-          _buildMascot(),
+        ],
+      ),
+      bottomNavigationBar: const BottomNav(currentIndex: 0),
+      floatingActionButton: !_showIntro
+          ? FloatingActionButton.extended(
+              onPressed: _goToCreateMemory,
+              icon: const Icon(Icons.add),
+              label: const Text('New Memory'),
+            )
+          : null,
+      body: SafeArea(
+        child: Stack(
+          children: [
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 400),
+              child: _showIntro
+                  ? _buildIntroView(textTheme, theme)
+                  : _buildListView(textTheme, theme, horizontalPadding),
+            ),
+            _buildMascot(),
           ],
         ),
       ),
     );
   }
 
-  // -------------------------------------------------------------
-  // INTRO VIEW (Logo + Random Quotes)
-  // -------------------------------------------------------------
+  // ---------------- INTRO VIEW ----------------
   Widget _buildIntroView(TextTheme textTheme, ThemeData theme) {
     return GestureDetector(
       onTap: _hideIntro,
@@ -159,15 +140,29 @@ Widget build(BuildContext context) {
     );
   }
 
-  // -------------------------------------------------------------
-  // LIST VIEW (History Memories)
-  // -------------------------------------------------------------
+  // ---------------- LIST VIEW (REALTIME) ----------------
   Widget _buildListView(
       TextTheme textTheme, ThemeData theme, double horizontalPadding) {
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 12),
-      child: _memories.isEmpty
-          ? Center(
+      child: StreamBuilder<List<Memory>>(
+        stream: _memoryService.memoriesStream(),   // ✔ FIXED — realtime per user
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return Center(child: Text('Error: ${snapshot.error}'));
+          }
+
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final published = snapshot.data!
+              .where((m) => !m.isDraft)
+              .toList()
+            ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+
+          if (published.isEmpty) {
+            return Center(
               child: Text(
                 'No memories yet.\nTap “New Memory” to start.',
                 textAlign: TextAlign.center,
@@ -175,67 +170,71 @@ Widget build(BuildContext context) {
                   color: theme.colorScheme.onSurface.withOpacity(0.7),
                 ),
               ),
-            )
-          : ListView.separated(
-              itemCount: _memories.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 12),
-              itemBuilder: (context, index) {
-                final memory = _memories[index];
-                final date = memory.date;
-                final formattedDate =
-                    '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-                final desc = memory.content.length > 120
-                    ? '${memory.content.substring(0, 120)}...'
-                    : memory.content;
+            );
+          }
 
-                return InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: () => _openMemory(memory),
-                  child: MemoryCard(
-                    title: memory.title,
-                    desc: desc,
-                    date: formattedDate,
-                  ),
-                );
-              },
-            ),
+          return ListView.separated(
+            itemCount: published.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 12),
+            itemBuilder: (context, index) {
+              final memory = published[index];
+              final date = memory.date;
+
+              final formattedDate =
+                  '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+
+              final desc = memory.content.length > 120
+                  ? '${memory.content.substring(0, 120)}...'
+                  : memory.content;
+
+              return InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () => _openMemory(memory),
+                child: MemoryCard(
+                  title: memory.title,
+                  desc: desc,
+                  date: formattedDate,
+                ),
+              );
+            },
+          );
+        },
+      ),
     );
   }
 
-  // -------------------------------------------------------------
-  // MASKOT (Robot) yang bisa ditekan
-  // -------------------------------------------------------------
+  // ---------------- MASKOT ----------------
   Widget _buildMascot() {
-  final theme = Theme.of(context);  // Pastikan kita mendapatkan theme dari context
+    final theme = Theme.of(context);
 
-  return Positioned(
-    right: 16,  // Posisi maskot dari sisi kanan layar
-    bottom: 80,  // Posisi maskot dari bawah layar
-    child: GestureDetector(
-      onTap: _goToAISuggestions,  // Ketika maskot ditekan
-      child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 500),
-        child: Container(
-          key: const ValueKey<String>("maskot"),
-          width: 120,  // Ukuran maskot
-          height: 120, // Ukuran maskot
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: theme.colorScheme.primary.withOpacity(0.3),  // Ambil primary color dari theme
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Image.asset(
-            'lib/assets/images/robot.png',  // Pastikan gambar ada di folder assets
-            fit: BoxFit.cover,
+    return Positioned(
+      right: 16,
+      bottom: 80,
+      child: GestureDetector(
+        onTap: _goToAISuggestions,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 500),
+          child: Container(
+            key: const ValueKey<String>("maskot"),
+            width: 120,
+            height: 120,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: theme.colorScheme.primary.withOpacity(0.3),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Image.asset(
+              'lib/assets/images/robot.png',
+              fit: BoxFit.cover,
+            ),
           ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 }

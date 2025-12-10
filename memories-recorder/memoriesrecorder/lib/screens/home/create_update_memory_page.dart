@@ -55,7 +55,6 @@ class _CreateUpdateMemoryPageState extends State<CreateUpdateMemoryPage> {
         _dateController.text = _formatDate(args.date);
       }
     } else {
-      // mode create: default tanggal hari ini
       final now = DateTime.now();
       _selectedDate = now;
       _dateController.text = _formatDate(now);
@@ -63,12 +62,6 @@ class _CreateUpdateMemoryPageState extends State<CreateUpdateMemoryPage> {
 
     _initializedFromArgs = true;
   }
-
-  String get _pageTitle =>
-      widget.mode == CreateUpdateMode.create ? 'Create Memory' : 'Update Memory';
-
-  String get _primaryButtonText =>
-      widget.mode == CreateUpdateMode.create ? 'Save Memory' : 'Update Memory';
 
   String _formatDate(DateTime date) {
     return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
@@ -93,52 +86,60 @@ class _CreateUpdateMemoryPageState extends State<CreateUpdateMemoryPage> {
     }
   }
 
+  // ============================================================
+  // 🔥 SAVE MEMORY (CREATE / UPDATE)
+  // ============================================================
   Future<void> _onSave({required bool asDraft}) async {
     if (!_formKey.currentState!.validate()) return;
-    if (_selectedDate == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a date.')),
-      );
-      return;
-    }
 
     final title = _titleController.text.trim();
     final content = _contentController.text.trim();
     final date = _selectedDate!;
 
     if (widget.mode == CreateUpdateMode.create) {
+      // CREATE memory baru
       await _memoryService.createMemory(
         title: title,
         content: content,
         date: date,
         isDraft: asDraft,
       );
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(asDraft
-              ? 'Memory saved as draft.'
-              : 'Memory created successfully.'),
-        ),
-      );
     } else {
+      // UPDATE memory lama
       if (_editingMemory == null) return;
-      await _memoryService.updateMemory(
-        _editingMemory!.id,
+
+      final updated = _editingMemory!.copyWith(
         title: title,
         content: content,
         date: date,
         isDraft: asDraft,
+        updatedAt: DateTime.now(),
       );
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(asDraft
-              ? 'Draft updated.'
-              : 'Memory updated successfully.'),
-        ),
+
+      // 1️⃣ Hapus lokasi lama (draft → publish / publish → draft)
+      await _memoryService.deleteMemory(
+        _editingMemory!.id,
+        isDraft: _editingMemory!.isDraft,
+      );
+
+      // 2️⃣ Simpan ulang di folder baru
+      await _memoryService.createMemory(
+        title: updated.title,
+        content: updated.content,
+        date: updated.date,
+        isDraft: updated.isDraft,
+        aiSuggestion: updated.aiSuggestion,
       );
     }
 
-    // Setelah save, balik ke home list.
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          asDraft ? 'Saved as draft.' : 'Saved successfully.',
+        ),
+      ),
+    );
+
     Navigator.pushNamedAndRemoveUntil(
       context,
       '/homeList',
@@ -146,6 +147,9 @@ class _CreateUpdateMemoryPageState extends State<CreateUpdateMemoryPage> {
     );
   }
 
+  // ============================================================
+  // 🔥 DELETE MEMORY
+  // ============================================================
   Future<void> _onDelete() async {
     if (_editingMemory == null) return;
 
@@ -153,9 +157,7 @@ class _CreateUpdateMemoryPageState extends State<CreateUpdateMemoryPage> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete Memory'),
-        content: const Text(
-          'Are you sure you want to delete this memory? This action cannot be undone.',
-        ),
+        content: const Text('This action cannot be undone.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -171,23 +173,25 @@ class _CreateUpdateMemoryPageState extends State<CreateUpdateMemoryPage> {
 
     if (confirm != true) return;
 
-    final success = await _memoryService.deleteMemory(_editingMemory!.id);
-    if (success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Memory deleted.')),
-      );
-      Navigator.pushNamedAndRemoveUntil(
-        context,
-        '/homeList',
-        (route) => false,
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to delete memory.')),
-      );
-    }
+    await _memoryService.deleteMemory(
+      _editingMemory!.id,
+      isDraft: _editingMemory!.isDraft,
+    );
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Memory deleted.')),
+    );
+
+    Navigator.pushNamedAndRemoveUntil(
+      context,
+      '/homeList',
+      (route) => false,
+    );
   }
 
+  // ============================================================
+  // UI
+  // ============================================================
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -196,14 +200,15 @@ class _CreateUpdateMemoryPageState extends State<CreateUpdateMemoryPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_pageTitle),
+        title: Text(widget.mode == CreateUpdateMode.create
+            ? 'Create Memory'
+            : 'Update Memory'),
         centerTitle: true,
         actions: [
           if (widget.mode == CreateUpdateMode.update)
             IconButton(
               onPressed: _onDelete,
               icon: const Icon(Icons.delete_outline),
-              tooltip: 'Delete',
             ),
         ],
       ),
@@ -218,124 +223,69 @@ class _CreateUpdateMemoryPageState extends State<CreateUpdateMemoryPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Title
-                Text(
-                  'Title',
-                  style: textTheme.labelLarge,
-                ),
+                // TITLE
+                Text('Title', style: textTheme.labelLarge),
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _titleController,
                   decoration: const InputDecoration(
-                    hintText: 'e.g. Morning Walk at the Park',
+                    hintText: 'e.g. A sunny morning...',
                     prefixIcon: Icon(Icons.title_outlined),
                     border: OutlineInputBorder(),
                   ),
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Title cannot be empty';
-                    }
-                    return null;
-                  },
+                  validator: (value) =>
+                      value!.trim().isEmpty ? 'Title cannot be empty' : null,
                 ),
 
                 const SizedBox(height: 20),
 
-                // Date
-                Text(
-                  'Date',
-                  style: textTheme.labelLarge,
-                ),
+                // DATE
+                Text('Date', style: textTheme.labelLarge),
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _dateController,
                   readOnly: true,
+                  onTap: _pickDate,
                   decoration: InputDecoration(
-                    hintText: 'Choose a date',
                     prefixIcon:
-                        const Icon(Icons.calendar_today_outlined),
-                    border: const OutlineInputBorder(),
+                        const Icon(Icons.calendar_month_outlined),
                     suffixIcon: IconButton(
                       icon: const Icon(Icons.event),
                       onPressed: _pickDate,
                     ),
+                    border: const OutlineInputBorder(),
                   ),
-                  onTap: _pickDate,
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Date cannot be empty';
-                    }
-                    return null;
-                  },
                 ),
 
                 const SizedBox(height: 20),
 
-                // Content
-                Text(
-                  'Memory',
-                  style: textTheme.labelLarge,
-                ),
+                // CONTENT
+                Text('Memory', style: textTheme.labelLarge),
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _contentController,
                   maxLines: 8,
-                  minLines: 5,
                   decoration: const InputDecoration(
-                    hintText:
-                        'Write down your thoughts, activities, or moments you want to remember...',
-                    alignLabelWithHint: true,
+                    hintText: 'Write something to remember...',
                     border: OutlineInputBorder(),
                   ),
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Memory content cannot be empty';
-                    }
-                    return null;
-                  },
+                  validator: (value) =>
+                      value!.trim().isEmpty ? 'Content cannot be empty' : null,
                 ),
 
                 const SizedBox(height: 24),
 
-                Text(
-                  'You can later enhance this memory with AI suggestions for activities or reflections.',
-                  style: textTheme.bodySmall?.copyWith(
-                    color:
-                        theme.colorScheme.onSurface.withOpacity(0.6),
-                  ),
-                ),
-
-                const SizedBox(height: 24),
-
-                // Save / update
                 ElevatedButton(
                   onPressed: () => _onSave(asDraft: false),
-                  style: ElevatedButton.styleFrom(
-                    minimumSize: const Size.fromHeight(52),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: Text(
-                    _primaryButtonText,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                  child: Text(widget.mode == CreateUpdateMode.create
+                      ? 'Save Memory'
+                      : 'Update Memory'),
                 ),
 
                 const SizedBox(height: 12),
 
-                // Save as draft
                 OutlinedButton(
                   onPressed: () => _onSave(asDraft: true),
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size.fromHeight(48),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
                   child: const Text('Save as Draft'),
                 ),
 

@@ -17,9 +17,10 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController(text: '');
   bool _isLoading = false;
   String? _errorMessage;
-  bool _obscurePassword = true; // Untuk mata password
-  final AuthService _authService = AuthService();
-  final MemoryService _memoryService = MemoryService();
+  bool _obscurePassword = true;
+
+  final AuthService _authService = AuthService();     // <<< tetap
+  final MemoryService _memoryService = MemoryService(); // <<< tetap
 
   @override
   void dispose() {
@@ -40,34 +41,42 @@ class _LoginScreenState extends State<LoginScreen> {
     final password = _passwordController.text.trim();
 
     try {
+      // 🔥 LOGIN
       await _authService.login(email: email, password: password);
 
-      // Cek apakah data user sudah ada di database
       final user = FirebaseAuth.instance.currentUser;
+
       if (user != null) {
-        // Cek apakah user sudah ada di Realtime Database
+        // 👇👇 NEW 🔥 Cek data di Realtime DB
         final userData = await _authService.getUserData(user.uid);
+
         if (userData == null) {
-          // Jika belum ada, tambahkan data ke Realtime Database
-          await _authService.saveUserData(user.uid, user.email ?? '', user.displayName ?? 'Anonymous');
+          // user belum punya node → simpan
+          await _authService.saveUserData(
+            user.uid,
+            user.email ?? '',
+            user.displayName ?? 'Anonymous',
+          );
         }
       }
 
-      final hasMemories = _memoryService.getPublished().isNotEmpty;
+      // 🔥 CEK MEMORIES
+      final hasMemories = await _memoryService.hasPublished();
+
       final targetRoute = hasMemories ? '/homeList' : '/homeEmpty';
 
-      // Navigate
       if (!mounted) return;
-      Navigator.pushNamedAndRemoveUntil(context, targetRoute, (route) => false);
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        targetRoute,
+        (route) => false,
+      );
 
-    } on AuthException catch (e) {
-      setState(() {
-        _errorMessage = e.message;
-      });
     } catch (e) {
       setState(() {
-        _errorMessage = 'Unexpected error: $e';
+        _errorMessage = e.toString();
       });
+
     } finally {
       if (mounted) {
         setState(() {
@@ -85,7 +94,6 @@ class _LoginScreenState extends State<LoginScreen> {
     Navigator.pushNamed(context, '/forgotPassword');
   }
 
-  // Toggle password visibility
   void _togglePasswordVisibility() {
     setState(() {
       _obscurePassword = !_obscurePassword;
@@ -111,8 +119,8 @@ class _LoginScreenState extends State<LoginScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const SizedBox(height: 24),
 
+                  const SizedBox(height: 24),
                   Text(
                     'Memories',
                     style: textTheme.headlineMedium?.copyWith(
@@ -128,18 +136,10 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Sign in to continue recording your moments.',
-                    style: textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurface.withOpacity(0.7),
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
 
                   const SizedBox(height: 40),
 
-                  // Email
+                  // EMAIL
                   Text('Email', style: textTheme.labelLarge),
                   const SizedBox(height: 8),
                   TextFormField(
@@ -163,7 +163,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   const SizedBox(height: 20),
 
-                  // Password
+                  // PASSWORD
                   Text('Password', style: textTheme.labelLarge),
                   const SizedBox(height: 8),
                   TextFormField(
@@ -210,7 +210,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     const SizedBox(height: 8),
                   ],
 
-                  // Sign in button
+                  // LOGIN BUTTON
                   ElevatedButton(
                     onPressed: _isLoading ? null : _onLogin,
                     style: ElevatedButton.styleFrom(
@@ -235,33 +235,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
 
                   const SizedBox(height: 24),
-
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Divider(
-                          thickness: 0.7,
-                          color: theme.dividerColor.withOpacity(0.6),
-                        ),
-                      ),
-                      const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 8.0),
-                        child: Text(''),
-                      ),
-                      Expanded(
-                        child: Divider(
-                          thickness: 0.7,
-                          color: theme.dividerColor.withOpacity(0.6),
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // Removed Google sign-in button
-
-                  const SizedBox(height: 16),
 
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,

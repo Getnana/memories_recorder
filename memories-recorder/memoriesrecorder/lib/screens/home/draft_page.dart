@@ -15,33 +15,6 @@ class DraftPage extends StatefulWidget {
 
 class _DraftPageState extends State<DraftPage> {
   final MemoryService _memoryService = MemoryService();
-  List<Memory> _drafts = [];
-
-  @override
-  void initState() {
-    super.initState();
-    _loadDrafts();
-  }
-
-  void _loadDrafts() {
-    setState(() {
-      _drafts = _memoryService.getDrafts();
-    });
-  }
-
-  Future<void> _goToCreateDraft() async {
-    await Navigator.pushNamed(context, '/memoryCreate');
-    _loadDrafts();
-  }
-
-  Future<void> _goToUpdateDraft(Memory draft) async {
-    await Navigator.pushNamed(
-      context,
-      '/memoryUpdate',
-      arguments: draft,
-    );
-    _loadDrafts();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -66,64 +39,97 @@ class _DraftPageState extends State<DraftPage> {
             horizontal: horizontalPadding,
             vertical: 12,
           ),
-          child: _drafts.isEmpty
-              ? _buildEmptyState(textTheme, theme)
-              : ListView.separated(
-                  itemCount: _drafts.length,
-                  separatorBuilder: (context, index) =>
-                      const SizedBox(height: 12),
-                  itemBuilder: (context, index) {
-                    final draft = _drafts[index];
-                    final date = draft.date;
-                    final formattedDate =
-                        '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
 
-                    final desc = draft.content.length > 120
-                        ? '${draft.content.substring(0, 120)}...'
-                        : draft.content;
+          // ==========================
+          // REALTIME DRAFT STREAM
+          // ==========================
+          child: StreamBuilder<List<Memory>>(
+            stream: _memoryService.draftsStream(), // ✔ FIXED
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return Center(child: Text('Error: ${snapshot.error}'));
+              }
 
-                    return InkWell(
-                      borderRadius: BorderRadius.circular(12),
-                      onTap: () => _goToUpdateDraft(draft),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Badge "Draft"
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: Container(
-                              margin:
-                                  const EdgeInsets.only(left: 4, bottom: 4),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: theme.colorScheme.secondary
-                                    .withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                              child: Text(
-                                'Draft',
-                                style: textTheme.labelSmall?.copyWith(
-                                  color: theme.colorScheme.secondary,
-                                  fontWeight: FontWeight.w600,
-                                ),
+              if (!snapshot.hasData) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              final drafts = snapshot.data!;
+
+              if (drafts.isEmpty) {
+                return _buildEmptyState(textTheme, theme);
+              }
+
+              drafts.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+
+              return ListView.separated(
+                itemCount: drafts.length,
+                separatorBuilder: (context, index) =>
+                    const SizedBox(height: 12),
+                itemBuilder: (context, index) {
+                  final draft = drafts[index];
+                  final date = draft.date;
+
+                  final formattedDate =
+                      '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+
+                  final desc = draft.content.length > 120
+                      ? '${draft.content.substring(0, 120)}...'
+                      : draft.content;
+
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () => _goToUpdateDraft(draft),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Container(
+                            margin: const EdgeInsets.only(left: 4, bottom: 4),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.secondary.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              'Draft',
+                              style: textTheme.labelSmall?.copyWith(
+                                color: theme.colorScheme.secondary,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ),
-                          MemoryCard(
-                            title: draft.title,
-                            desc: desc,
-                            date: formattedDate,
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
+                        ),
+                        MemoryCard(
+                          title: draft.title,
+                          desc: desc,
+                          date: formattedDate,
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              );
+            },
+          ),
         ),
       ),
+    );
+  }
+
+  Future<void> _goToCreateDraft() async {
+    await Navigator.pushNamed(context, '/memoryCreate');
+  }
+
+  Future<void> _goToUpdateDraft(Memory draft) async {
+    await Navigator.pushNamed(
+      context,
+      '/memoryUpdate',
+      arguments: draft,
     );
   }
 

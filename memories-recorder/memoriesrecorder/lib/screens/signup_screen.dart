@@ -47,13 +47,17 @@ class _SignupScreenState extends State<SignupScreen> {
     final password = _passwordController.text.trim();
 
     try {
+      // Register user (AuthService.register sudah menyimpan data user ke Realtime DB)
       await _authService.register(
         username: username,
         email: email,
         password: password,
       );
 
-      final hasMemories = _memoryService.getPublished().isNotEmpty;
+      // ===== CHANGED: use async helper to check published memories =====
+      // Because MemoryService no longer exposes synchronous getPublished(),
+      // we call hasPublished() which returns Future<bool>.
+      final hasMemories = await _memoryService.hasPublished();
       final targetRoute = hasMemories ? '/homeList' : '/homeEmpty';
 
       if (!mounted) return;
