@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "53567551706",
+    "project_id": "memorise-9e7c6",
+    "storage_bucket": "memorise-9e7c6.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:53567551706:android:25396a00cff580c970cde3",
+        "android_client_info": {
+          "package_name": "com.example.memoriesrecorder"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA6P2nRT3F1ZH8wsCaWv6S6_u_B1moFhu0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
