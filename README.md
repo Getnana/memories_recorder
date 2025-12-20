@@ -1,5 +1,3 @@
-Kelompok Byte: 
-
 
 Memorise Recorder 📝✨
 Memorise Recorder adalah aplikasi jurnal berbasis mobile yang dirancang untuk membantu pengguna melacak kesehatan mental mereka. Dengan teknologi Analisis Emosi, aplikasi ini mampu memahami perasaan di balik setiap tulisan atau curhatan pengguna dan memberikan rekomendasi kegiatan positif yang dipersonalisasi.
